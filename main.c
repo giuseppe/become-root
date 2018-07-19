@@ -43,7 +43,7 @@ write_mapping (char *program, pid_t pid, uint32_t host_id,
 #define APPEND_ARGUMENT(x)                        \
   do                                              \
     {                                             \
-      sprintf (arg_buffer[argc], "%i", x);      \
+      sprintf (arg_buffer[argc], "%i", x);        \
       argv[argc] = arg_buffer[argc];              \
       argc++;                                     \
     } while (0)
@@ -80,7 +80,7 @@ write_mapping (char *program, pid_t pid, uint32_t host_id,
     }
 }
 
-void
+static void
 write_user_group_mappings (struct user_mapping *user_mapping, uid_t uid, gid_t gid, pid_t pid)
 {
   write_mapping ("/usr/bin/newuidmap", pid, uid, user_mapping->first_subuid, user_mapping->n_subuid);
