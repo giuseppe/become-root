@@ -27,6 +27,8 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <string.h>
+#include <stdbool.h>
+#include <sys/mount.h>
 
 static void
 write_mapping (char *program, pid_t pid, uint32_t host_id,
@@ -102,13 +104,68 @@ main (int argc, char **argv)
   uid_t uid = geteuid ();
   gid_t gid = getegid ();
   struct user_mapping user_mapping;
+  unsigned int flags = CLONE_NEWUSER;
+  bool mount_proc = false;
+  bool mount_sys = false;
 
   if (argc == 1)
     error (EXIT_FAILURE, 0, "please specify a command");
-  if (strcmp (argv[1], "--help") == 0 || strcmp (argv[1], "-h") == 0)
+
+  argv++;
+
+  for (; *argv && *argv[0] == '-'; argv++)
     {
-      printf ("Usage: %s COMMAND [ARGS]\n", argv[0]);
-      exit (EXIT_SUCCESS);
+      char *c;
+      if (strcmp (*argv, "--help") == 0 || strcmp (*argv, "-h") == 0)
+        {
+          printf ("Usage: %s -acimnpuPS COMMAND [ARGS]\n", argv[0]);
+          exit (EXIT_SUCCESS);
+        }
+
+      for (c = *argv + 1; *c; c++)
+        {
+          switch (*c)
+            {
+            case 'a':
+              flags |= CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWIPC | CLONE_NEWPID | CLONE_NEWCGROUP | CLONE_NEWUTS;
+              break;
+
+            case 'c':
+              flags |= CLONE_NEWCGROUP;
+              break;
+
+            case 'i':
+              flags |= CLONE_NEWIPC;
+              break;
+
+            case 'm':
+              flags |= CLONE_NEWNS;
+              break;
+
+            case 'n':
+              flags |= CLONE_NEWNET;
+              break;
+
+            case 'p':
+              flags |= CLONE_NEWPID;
+              break;
+
+            case 'u':
+              flags |= CLONE_NEWUTS;
+              break;
+
+            case 'P':
+              mount_proc = true;
+              break;
+
+            case 'S':
+              mount_sys = true;
+              break;
+
+            default:
+              error (EXIT_FAILURE, 0, "unknown option");
+            }
+        }
     }
 
   if (getsubidrange (uid, 1, &user_mapping.first_subuid, &user_mapping.n_subuid) < 0)
@@ -134,16 +191,52 @@ main (int argc, char **argv)
     }
   else
     {
+      int r;
       char b;
       close (p1[0]);
       close (p2[1]);
 
-      if (unshare (CLONE_NEWUSER) < 0)
+      if (unshare (flags) < 0)
         error (EXIT_FAILURE, errno, "cannot create the user namespace");
 
       write (p1[1], "0", 1);
       read (p2[0], &b, 1);
-      if (execvp (argv[1], argv + 1) < 0)
+
+      if (setresuid (0, 0, 0) < 0)
+        error (EXIT_FAILURE, errno, "cannot setresuid");
+
+      do
+        r = waitpid (pid, NULL, 0);
+      while (r < 0 && errno == EINTR);
+
+      if (flags & CLONE_NEWPID)
+        {
+          pid_t child = fork ();
+          if (child < 0)
+            error (EXIT_FAILURE, errno, "could not fork");
+          else if (child)
+            {
+              int status;
+              do
+                r = waitpid (child, &status, 0);
+              while (r < 0 && errno == EINTR);
+              if (r < 0)
+                error (EXIT_FAILURE, errno, "error waitpid");
+              if (WIFEXITED (status))
+                r = WEXITSTATUS (status);
+              else if (WIFSIGNALED (status))
+                r = 128 + WTERMSIG (status);
+              exit (r);
+            }
+        }
+
+      if (mount_proc && mount ("proc", "/proc", "proc", 0, "nosuid,noexec,nodev") < 0)
+            error (EXIT_FAILURE, errno, "could not mount proc");
+
+      if (mount_sys && mount ("sysfs", "/sys", "sysfs", 0, "nosuid,noexec,nodev") < 0)
+            error (EXIT_FAILURE, errno, "could not mount sys");
+
+      if (execvp (*argv, argv) < 0)
         error (EXIT_FAILURE, errno, "cannot exec %s", argv[1]);
       _exit (EXIT_FAILURE);
     }
