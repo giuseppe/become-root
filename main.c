@@ -29,6 +29,8 @@
 #include <string.h>
 #include <stdbool.h>
 #include <sys/mount.h>
+#include <sys/prctl.h>
+#include <sys/capability.h>
 
 static void
 write_mapping (char *program, pid_t pid, uint32_t host_id,
@@ -88,12 +90,112 @@ write_user_group_mappings (struct user_mapping *user_mapping, uid_t uid, gid_t g
 }
 
 static void
-do_setup (struct user_mapping *user_mapping, uid_t uid, gid_t gid, pid_t parent, int p1[2], int p2[2])
+copy_mappings (const char *from, const char *to)
+{
+#define SIZE (1 << 12)
+  char *b, *b_it, *it;
+  ssize_t s, r, c = 0;
+  int srcfd = -1, destfd = -1;
+  uint32_t so_far = 0, id, len;
+
+  b = malloc (SIZE);
+  if (b == NULL)
+    error (EXIT_FAILURE, errno, "cannot allocate memory");
+
+  srcfd = open (from, O_RDONLY);
+  if (srcfd < 0)
+    error (EXIT_FAILURE, errno, "could not open %s", from);
+
+  destfd = open (to, O_RDWR);
+  if (destfd < 0)
+    error (EXIT_FAILURE, errno, "could not open %s", to);
+
+  do
+    r = read (srcfd, b, SIZE);
+  while (r < 0 && errno == EINTR);
+  if (r < 0)
+    error (EXIT_FAILURE, errno, "could not read from %s", from);
+
+  for (b_it = b, c = 1, it = strtok (b, " "); it; it = strtok (NULL, " "), c++)
+    {
+      switch (c % 3)
+        {
+        case 0:
+          len = strtoull (it, NULL, 10);
+          b_it += sprintf (b_it, "%lu %lu %lu\n", so_far, id, len);
+          so_far += len;
+          break;
+
+        case 1:
+          id = strtoull (it, NULL, 10);
+          break;
+
+        case 2:
+          /* Ignore.  */
+          break;
+        }
+    }
+
+  do
+    s = write (destfd, b, r);
+  while (s < 0 && errno == EINTR);
+  if (s < 0)
+    error (EXIT_FAILURE, errno, "could not write to %s", to);
+
+  close (srcfd);
+  close (destfd);
+
+  free (b);
+}
+
+static void
+do_setup (struct user_mapping *user_mapping, uid_t uid, gid_t gid, pid_t parent, int p1[2], int p2[2], bool keep_mapping)
 {
   char b;
   read (p1[0], &b, 1);
-  write_user_group_mappings (user_mapping, uid, gid, parent);
+  if (!keep_mapping)
+      write_user_group_mappings (user_mapping, uid, gid, parent);
+  else
+    {
+      char dest[64];
+
+      sprintf (dest, "/proc/%d/gid_map", parent);
+      copy_mappings ("/proc/self/gid_map", dest);
+
+      sprintf (dest, "/proc/%d/uid_map", parent);
+      copy_mappings ("/proc/self/uid_map", dest);
+    }
+
   write (p2[1], "0", 1);
+}
+
+static void
+set_all_caps ()
+{
+  int i;
+  struct __user_cap_header_struct hdr = { _LINUX_CAPABILITY_VERSION_3, 0 };
+  struct __user_cap_data_struct data[2] = { { 0 } };
+
+  data[0].effective = 0xFFFFFFFF;
+  data[0].permitted = 0xFFFFFFFF;
+  data[0].inheritable = 0xFFFFFFFF;
+  data[1].effective = 0xFFFFFFFF;
+  data[1].permitted = 0xFFFFFFFF;
+  data[1].inheritable = 0xFFFFFFFF;
+  if (capset (&hdr, data) < 0)
+    error (EXIT_FAILURE, errno, "cannot set capabilities");
+
+  for (i = 0; ; i++)
+    {
+      if (prctl (PR_CAP_AMBIENT, PR_CAP_AMBIENT_RAISE, i, 0, 0) < 0)
+        {
+          if (errno == EINVAL)
+            break;
+          if (errno == EPERM)
+            continue;
+          error (EXIT_FAILURE, errno, "cannot raise capability");
+        }
+    }
 }
 
 int
@@ -107,6 +209,7 @@ main (int argc, char **argv)
   unsigned int flags = CLONE_NEWUSER;
   bool mount_proc = false;
   bool mount_sys = false;
+  bool keep_mapping = uid == 0;
 
   if (argc == 1)
     error (EXIT_FAILURE, 0, "please specify a command");
@@ -168,10 +271,13 @@ main (int argc, char **argv)
         }
     }
 
-  if (getsubidrange (uid, 1, &user_mapping.first_subuid, &user_mapping.n_subuid) < 0)
-    error (EXIT_FAILURE, errno, "cannot read subuid file or find the user");
-  if (getsubidrange (gid, 1, &user_mapping.first_subgid, &user_mapping.n_subgid) < 0)
-    error (EXIT_FAILURE, errno, "cannot read subgid file or find the user");
+  if (! keep_mapping)
+    {
+      if (getsubidrange (uid, 1, &user_mapping.first_subuid, &user_mapping.n_subuid) < 0)
+        error (EXIT_FAILURE, errno, "cannot read subuid file or find the user");
+      if (getsubidrange (gid, 1, &user_mapping.first_subgid, &user_mapping.n_subgid) < 0)
+        error (EXIT_FAILURE, errno, "cannot read subgid file or find the user");
+    }
 
   if (pipe2 (p1, O_CLOEXEC) < 0)
     error (EXIT_FAILURE, errno, "cannot create pipe");
@@ -187,7 +293,7 @@ main (int argc, char **argv)
     {
       close (p1[1]);
       close (p2[0]);
-      do_setup (&user_mapping, uid, gid, parentpid, p1, p2);
+      do_setup (&user_mapping, uid, gid, parentpid, p1, p2, keep_mapping);
     }
   else
     {
@@ -201,9 +307,6 @@ main (int argc, char **argv)
 
       write (p1[1], "0", 1);
       read (p2[0], &b, 1);
-
-      if (setresuid (0, 0, 0) < 0)
-        error (EXIT_FAILURE, errno, "cannot setresuid");
 
       do
         r = waitpid (pid, NULL, 0);
@@ -229,6 +332,17 @@ main (int argc, char **argv)
               exit (r);
             }
         }
+
+      if (setresuid (0, 0, 0) < 0)
+        error (EXIT_FAILURE, errno, "cannot setresuid");
+
+      if (prctl (PR_SET_KEEPCAPS, 1, 0, 0, 0) < 0)
+            error (EXIT_FAILURE, errno, "cannot set keepcaps");
+
+      if (prctl (PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0)
+        error (EXIT_FAILURE, errno, "cannot set no new privileges");
+
+      set_all_caps ();
 
       if (mount_proc && mount ("proc", "/proc", "proc", 0, "nosuid,noexec,nodev") < 0)
             error (EXIT_FAILURE, errno, "could not mount proc");
