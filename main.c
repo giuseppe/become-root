@@ -152,7 +152,18 @@ static void
 do_setup (struct user_mapping *user_mapping, uid_t uid, gid_t gid, pid_t parent, int p1[2], int p2[2], bool keep_mapping)
 {
   char b;
-  read (p1[0], &b, 1);
+  ssize_t s;
+
+  do
+    s = read (p1[0], &b, 1);
+  while (s < 0 && errno == EINTR);
+  if (s < 0)
+    error (EXIT_FAILURE, errno, "cannot read from pipe");
+
+  /* The parent process failed, so don't do anything.  */
+  if (b != '0')
+    return;
+
   if (!keep_mapping)
       write_user_group_mappings (user_mapping, uid, gid, parent);
   else
@@ -165,8 +176,11 @@ do_setup (struct user_mapping *user_mapping, uid_t uid, gid_t gid, pid_t parent,
       sprintf (dest, "/proc/%d/uid_map", parent);
       copy_mappings ("/proc/self/uid_map", dest);
     }
-
-  write (p2[1], "0", 1);
+  do
+    s = write (p2[1], "0", 1);
+  while (s < 0 && errno == EINTR);
+  if (s < 0)
+    error (EXIT_FAILURE, errno, "cannot write to pipe");
 }
 
 static void
@@ -305,8 +319,18 @@ main (int argc, char **argv)
       if (unshare (flags) < 0)
         error (EXIT_FAILURE, errno, "cannot create the user namespace");
 
-      write (p1[1], "0", 1);
-      read (p2[0], &b, 1);
+      do
+        r = write (p1[1], "0", 1);
+      while (r < 0 && errno == EINTR);
+      if (r < 0)
+        error (EXIT_FAILURE, errno, "cannot write to pipe");
+
+      do
+        r = read (p2[0], &b, 1);
+      while (r < 0 && errno == EINTR);
+      /* Setup failed, just exit.  */
+      if (b != '0')
+        exit (EXIT_FAILURE);
 
       do
         r = waitpid (pid, NULL, 0);
