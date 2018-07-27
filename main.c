@@ -164,6 +164,7 @@ do_setup (struct user_mapping *user_mapping,
 {
   char b;
   ssize_t s;
+  int sync_fd[2];
 
   do
     s = read (p1[0], &b, 1);
@@ -191,17 +192,36 @@ do_setup (struct user_mapping *user_mapping,
   if (configure_network)
     {
       pid_t fpid;
+      int sync_fd[2];
+
+      if (pipe (sync_fd) < 0)
+        error (EXIT_FAILURE, errno, "cannot create pipe");
 
       fpid = fork ();
       if (fpid < 0)
         error (EXIT_FAILURE, errno, "cannot fork");
       if (fpid)
-        close (network_pipe);
+        {
+          int ret;
+          char b;
+
+          close (sync_fd[1]);
+          do
+            ret = read (sync_fd[0], &b, 1);
+          while (ret < 0 && errno == EINTR);
+          if (ret < 0)
+            error (EXIT_FAILURE, errno, "cannot read from sync pipe");
+          close (sync_fd[0]);
+          close (network_pipe);
+        }
       else
         {
           char pipe_fmt[16];
           char parent_fmt[16];
+          char sync_fmt[16];
           int dev_null;
+
+          close (sync_fd[0]);
 
           setpgid (0, 0);
           /* double fork.  */
@@ -215,7 +235,9 @@ do_setup (struct user_mapping *user_mapping,
 
           sprintf (pipe_fmt, "%d", network_pipe);
           sprintf (parent_fmt, "%d", parent);
-          execlp ("slirp4netns", "slirp4netns", "-c", "-e", pipe_fmt, parent_fmt, "tap0", NULL);
+          sprintf (sync_fmt, "%d", sync_fd[1]);
+
+          execlp ("slirp4netns", "slirp4netns", "-c", "-e", pipe_fmt, "-r", sync_fmt, parent_fmt, "tap0", NULL);
           _exit (EXIT_FAILURE);
         }
 
@@ -434,24 +456,6 @@ main (int argc, char **argv)
       if (mount_sys && mount ("sysfs", "/sys", "sysfs", 0, "nosuid,noexec,nodev") < 0)
             error (EXIT_FAILURE, errno, "could not mount sys");
 
-      if (configure_network)
-        {
-          struct ifreq ifr;
-          int i;
-          int sock = socket (PF_INET, SOCK_DGRAM, 0);
-          memset (&ifr, 0, sizeof (ifr));
-          strcpy (ifr.ifr_name, "tap0");
-          for (i = 0;; i++)
-            {
-              if (ioctl (sock, SIOCGIFFLAGS, &ifr) == 0)
-                break;
-
-              if (i > 2)
-                error (0, errno, "waiting for network to be up: SIOCGIFFLAGS");
-              sleep (1);
-            }
-          close(sock);
-        }
       if (execvp (*argv, argv) < 0)
         error (EXIT_FAILURE, errno, "cannot exec %s", argv[1]);
       _exit (EXIT_FAILURE);
