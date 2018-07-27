@@ -33,6 +33,7 @@ Some options are available:
 * `u`: create an UTS namespace
 * `P`: mount a new `/proc`
 * `S`: mount a new `/sys`
+* `N`: configure the network with slirp4netns
 
 ## Examples
 

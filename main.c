@@ -31,6 +31,9 @@
 #include <sys/mount.h>
 #include <sys/prctl.h>
 #include <sys/capability.h>
+#include <linux/if.h>
+#include <linux/if_tun.h>
+#include <sys/ioctl.h>
 
 static void
 write_mapping (char *program, pid_t pid, uint32_t host_id,
@@ -149,7 +152,15 @@ copy_mappings (const char *from, const char *to)
 }
 
 static void
-do_setup (struct user_mapping *user_mapping, uid_t uid, gid_t gid, pid_t parent, int p1[2], int p2[2], bool keep_mapping)
+do_setup (struct user_mapping *user_mapping,
+          uid_t uid,
+          gid_t gid,
+          pid_t parent,
+          int p1[2],
+          int p2[2],
+          bool keep_mapping,
+          bool configure_network,
+          int network_pipe)
 {
   char b;
   ssize_t s;
@@ -176,6 +187,40 @@ do_setup (struct user_mapping *user_mapping, uid_t uid, gid_t gid, pid_t parent,
       sprintf (dest, "/proc/%d/uid_map", parent);
       copy_mappings ("/proc/self/uid_map", dest);
     }
+
+  if (configure_network)
+    {
+      pid_t fpid;
+
+      fpid = fork ();
+      if (fpid < 0)
+        error (EXIT_FAILURE, errno, "cannot fork");
+      if (fpid)
+        close (network_pipe);
+      else
+        {
+          char pipe_fmt[16];
+          char parent_fmt[16];
+          int dev_null;
+
+          setpgid (0, 0);
+          /* double fork.  */
+          if (fork ())
+            _exit (EXIT_SUCCESS);
+
+          dev_null = open ("/dev/null", O_RDWR);
+          dup2 (dev_null, 0);
+          dup2 (dev_null, 1);
+          dup2 (dev_null, 2);
+
+          sprintf (pipe_fmt, "%d", network_pipe);
+          sprintf (parent_fmt, "%d", parent);
+          execlp ("slirp4netns", "slirp4netns", "-c", "-e", pipe_fmt, parent_fmt, "tap0", NULL);
+          _exit (EXIT_FAILURE);
+        }
+
+    }
+
   do
     s = write (p2[1], "0", 1);
   while (s < 0 && errno == EINTR);
@@ -223,7 +268,9 @@ main (int argc, char **argv)
   unsigned int flags = CLONE_NEWUSER;
   bool mount_proc = false;
   bool mount_sys = false;
+  bool configure_network = false;
   bool keep_mapping = uid == 0;
+  int network_pipe[2];
 
   if (argc == 1)
     error (EXIT_FAILURE, 0, "please specify a command");
@@ -235,7 +282,7 @@ main (int argc, char **argv)
       char *c;
       if (strcmp (*argv, "--help") == 0 || strcmp (*argv, "-h") == 0)
         {
-          printf ("Usage: %s -acimnpuPS COMMAND [ARGS]\n", argv[0]);
+          printf ("Usage: %s -acimnpuPSN COMMAND [ARGS]\n", argv[0]);
           exit (EXIT_SUCCESS);
         }
 
@@ -259,6 +306,9 @@ main (int argc, char **argv)
               flags |= CLONE_NEWNS;
               break;
 
+            case 'N':
+              configure_network = true;
+              /* passthrough */
             case 'n':
               flags |= CLONE_NEWNET;
               break;
@@ -300,6 +350,12 @@ main (int argc, char **argv)
 
   parentpid = getpid ();
 
+  if (configure_network)
+    {
+      if (pipe (network_pipe) < 0)
+        error (EXIT_FAILURE, errno, "cannot create pipe");
+    }
+
   pid = fork ();
   if (pid < 0)
     error (EXIT_FAILURE, errno, "cannot fork");
@@ -307,7 +363,8 @@ main (int argc, char **argv)
     {
       close (p1[1]);
       close (p2[0]);
-      do_setup (&user_mapping, uid, gid, parentpid, p1, p2, keep_mapping);
+      close (network_pipe[1]);
+      do_setup (&user_mapping, uid, gid, parentpid, p1, p2, keep_mapping, configure_network, network_pipe[0]);
     }
   else
     {
@@ -315,6 +372,9 @@ main (int argc, char **argv)
       char b;
       close (p1[0]);
       close (p2[1]);
+      if (configure_network)
+        close (network_pipe[0]);
+      /* leak network_pipe[1] */
 
       if (unshare (flags) < 0)
         error (EXIT_FAILURE, errno, "cannot create the user namespace");
@@ -374,6 +434,24 @@ main (int argc, char **argv)
       if (mount_sys && mount ("sysfs", "/sys", "sysfs", 0, "nosuid,noexec,nodev") < 0)
             error (EXIT_FAILURE, errno, "could not mount sys");
 
+      if (configure_network)
+        {
+          struct ifreq ifr;
+          int i;
+          int sock = socket (PF_INET, SOCK_DGRAM, 0);
+          memset (&ifr, 0, sizeof (ifr));
+          strcpy (ifr.ifr_name, "tap0");
+          for (i = 0;; i++)
+            {
+              if (ioctl (sock, SIOCGIFFLAGS, &ifr) == 0)
+                break;
+
+              if (i > 2)
+                error (0, errno, "waiting for network to be up: SIOCGIFFLAGS");
+              sleep (1);
+            }
+          close(sock);
+        }
       if (execvp (*argv, argv) < 0)
         error (EXIT_FAILURE, errno, "cannot exec %s", argv[1]);
       _exit (EXIT_FAILURE);
