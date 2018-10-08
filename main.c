@@ -35,7 +35,7 @@
 #include <linux/if_tun.h>
 #include <sys/ioctl.h>
 
-static void
+static int
 write_mapping (char *program, pid_t pid, uint32_t host_id,
                uint32_t first_subid, uint32_t n_subids)
 {
@@ -71,18 +71,25 @@ write_mapping (char *program, pid_t pid, uint32_t host_id,
     error (EXIT_FAILURE, errno, "cannot fork");
   if (fpid)
     {
-      int r;
+      int r, status;
       do
-        r = waitpid (fpid, NULL, 0);
+        r = waitpid (fpid, &status, 0);
       while (r < 0 && errno == EINTR);
       if (r < 0)
         error (EXIT_FAILURE, errno, "waitpid");
+
+      if (WIFEXITED (status))
+        return WEXITSTATUS (status);
+      if (WIFSIGNALED (status))
+        return 128 + WTERMSIG (status);
+      return 0;
     }
   else
     {
       execvp (argv[0], argv);
       _exit (EXIT_FAILURE);
     }
+  return 0;
 }
 
 static void
@@ -94,8 +101,11 @@ write_user_group_mappings (struct user_mapping *user_mapping, uid_t uid, gid_t g
     newuidmap = "/usr/bin/newuidmap";
   if (newgidmap == NULL)
     newgidmap = "/usr/bin/newgidmap";
-  write_mapping (newuidmap, pid, uid, user_mapping->first_subuid, user_mapping->n_subuid);
-  write_mapping (newgidmap, pid, gid, user_mapping->first_subgid, user_mapping->n_subgid);
+
+  if (write_mapping (newuidmap, pid, uid, user_mapping->first_subuid, user_mapping->n_subuid))
+    error (EXIT_FAILURE, 0, "could not write mappings");
+  if (write_mapping (newgidmap, pid, gid, user_mapping->first_subgid, user_mapping->n_subgid))
+    error (EXIT_FAILURE, 0, "could not write mappings");
 }
 
 static void
@@ -183,7 +193,7 @@ do_setup (struct user_mapping *user_mapping,
     return;
 
   if (!keep_mapping)
-      write_user_group_mappings (user_mapping, uid, gid, parent);
+    write_user_group_mappings (user_mapping, uid, gid, parent);
   else
     {
       char dest[64];
