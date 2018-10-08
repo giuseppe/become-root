@@ -285,6 +285,22 @@ set_all_caps ()
     }
 }
 
+static void
+usage (FILE *o, char **argv)
+{
+  fprintf (o, "Usage: %s -acimnpuPSN COMMAND [ARGS]\n", argv[0]);
+  fprintf (o, "  -a unshare all the namespaces\n");
+  fprintf (o, "  -c specify CLONE_NEWCGROUP\n");
+  fprintf (o, "  -i specify CLONE_NEWIPC\n");
+  fprintf (o, "  -m specify CLONE_NEWNS (mount namespace)\n");
+  fprintf (o, "  -N configure the network with slirp4netns\n");
+  fprintf (o, "  -n specify CLONE_NEWNET (no configuration performed)\n");
+  fprintf (o, "  -p specify CLONE_NEWPID\n");
+  fprintf (o, "  -u specify CLONE_NEWUTS\n");
+  fprintf (o, "  -P mount a fresh /proc\n");
+  fprintf (o, "  -S mount a fresh /sys\n");
+}
+
 int
 main (int argc, char **argv)
 {
@@ -310,7 +326,7 @@ main (int argc, char **argv)
       char *c;
       if (strcmp (*argv, "--help") == 0 || strcmp (*argv, "-h") == 0)
         {
-          printf ("Usage: %s -acimnpuPSN COMMAND [ARGS]\n", argv[0]);
+          usage (stdout, argv);
           exit (EXIT_SUCCESS);
         }
 
@@ -358,7 +374,9 @@ main (int argc, char **argv)
               break;
 
             default:
-              error (EXIT_FAILURE, 0, "unknown option");
+              error (0, 0, "unknown option: %s", c);
+              usage (stderr, argv);
+              exit (EXIT_FAILURE);
             }
         }
     }
