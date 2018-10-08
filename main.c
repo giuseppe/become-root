@@ -88,8 +88,14 @@ write_mapping (char *program, pid_t pid, uint32_t host_id,
 static void
 write_user_group_mappings (struct user_mapping *user_mapping, uid_t uid, gid_t gid, pid_t pid)
 {
-  write_mapping ("/usr/bin/newuidmap", pid, uid, user_mapping->first_subuid, user_mapping->n_subuid);
-  write_mapping ("/usr/bin/newgidmap", pid, gid, user_mapping->first_subgid, user_mapping->n_subgid);
+  char *newuidmap = getenv ("NEWUIDMAP");
+  char *newgidmap = getenv ("NEWGIDMAP");
+  if (newuidmap == NULL)
+    newuidmap = "/usr/bin/newuidmap";
+  if (newgidmap == NULL)
+    newgidmap = "/usr/bin/newgidmap";
+  write_mapping (newuidmap, pid, uid, user_mapping->first_subuid, user_mapping->n_subuid);
+  write_mapping (newgidmap, pid, gid, user_mapping->first_subgid, user_mapping->n_subgid);
 }
 
 static void
