@@ -51,27 +51,16 @@ cleanup_filep (FILE **f)
 
 /*if subuid or subgid exist, take the first range for the user */
 int
-getsubidrange (uid_t id, int is_uid, uint32_t *from, uint32_t *len)
+getsubidrange (uid_t uid, uid_t id, int is_uid, uint32_t *from, uint32_t *len)
 {
   cleanup_file FILE *input = NULL;
   cleanup_free char *lineptr = NULL;
   size_t lenlineptr = 0, len_name;
   const char *name;
-
-  if (is_uid)
-    {
-      struct passwd *pwd = getpwuid (id);
-      if (pwd == NULL)
-        return -1;
-      name = pwd->pw_name;
-    }
-  else
-    {
-      struct group *grp = getgrgid (id);
-      if (grp == NULL)
-        return -1;
-      name = grp->gr_name;
-    }
+  struct passwd *pwd = getpwuid (uid);
+  if (pwd == NULL)
+    return -1;
+  name = pwd->pw_name;
 
   len_name = strlen (name);
 

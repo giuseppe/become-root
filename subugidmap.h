@@ -28,6 +28,6 @@ struct user_mapping
   uint32_t first_subgid, n_subgid;
 };
 
-int getsubidrange (uid_t id, int is_uid, uint32_t *from, uint32_t *len);
+int getsubidrange (uid_t uid, uid_t id, int is_uid, uint32_t *from, uint32_t *len);
 
 #endif

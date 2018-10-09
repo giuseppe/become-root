@@ -400,9 +400,9 @@ main (int argc, char **argv)
 
   if (! keep_mapping)
     {
-      if (getsubidrange (uid, 1, &user_mapping.first_subuid, &user_mapping.n_subuid) < 0)
+      if (getsubidrange (uid, uid, 1, &user_mapping.first_subuid, &user_mapping.n_subuid) < 0)
         error (EXIT_FAILURE, errno, "cannot read subuid file or find the user");
-      if (getsubidrange (gid, 1, &user_mapping.first_subgid, &user_mapping.n_subgid) < 0)
+      if (getsubidrange (uid, gid, 1, &user_mapping.first_subgid, &user_mapping.n_subgid) < 0)
         error (EXIT_FAILURE, errno, "cannot read subgid file or find the user");
     }
 
