@@ -19,6 +19,7 @@
 #define _GNU_SOURCE
 
 #include "subugidmap.h"
+#include <sys/socket.h>
 #include <error.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -345,11 +346,17 @@ main (int argc, char **argv)
           switch (*c)
             {
             case 'a':
+#ifdef CLONE_NEWCGROUP
               flags |= CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWIPC | CLONE_NEWPID | CLONE_NEWCGROUP | CLONE_NEWUTS;
+#else
+              flags |= CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWIPC | CLONE_NEWPID | CLONE_NEWUTS;
+#endif
               break;
 
             case 'c':
+#ifdef CLONE_NEWCGROUP
               flags |= CLONE_NEWCGROUP;
+#endif
               break;
 
             case 'i':
