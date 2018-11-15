@@ -237,6 +237,7 @@ do_setup (struct user_mapping *user_mapping,
           char parent_fmt[16];
           char sync_fmt[16];
           int dev_null;
+          char *path;
 
           close (sync_fd[0]);
 
@@ -254,7 +255,10 @@ do_setup (struct user_mapping *user_mapping,
           sprintf (parent_fmt, "%d", parent);
           sprintf (sync_fmt, "%d", sync_fd[1]);
 
-          execlp ("slirp4netns", "slirp4netns", "-c", "-e", pipe_fmt, "-r", sync_fmt, parent_fmt, "tap0", NULL);
+          path = getenv ("SLIRP4NETNS");
+          if (path == NULL)
+            path = "slirp4netns";
+          execlp (path, "slirp4netns", "-c", "-e", pipe_fmt, "-r", sync_fmt, parent_fmt, "tap0", NULL);
           _exit (EXIT_FAILURE);
         }
 
