@@ -331,10 +331,10 @@ main (int argc, char **argv)
   bool keep_mapping = uid == 0;
   int network_pipe[2];
 
-  if (argc == 1)
-    error (EXIT_FAILURE, 0, "please specify a command");
-
   argv++;
+
+  if (argc == 1 && getenv ("SHELL") == NULL)
+    error (EXIT_FAILURE, 0, "please specify a command");
 
   for (; *argv && *argv[0] == '-'; argv++)
     {
@@ -501,6 +501,12 @@ main (int argc, char **argv)
       if (mount_sys && mount ("sysfs", "/sys", "sysfs", 0, "nosuid,noexec,nodev") < 0)
             error (EXIT_FAILURE, errno, "could not mount sys");
 
+      if (*argv == NULL)
+        {
+          const char *shell = getenv ("SHELL");
+          if (execlp (shell, shell, NULL) < 0)
+            error (EXIT_FAILURE, errno, "cannot exec %s", argv[1]);
+        }
       if (execvp (*argv, argv) < 0)
         error (EXIT_FAILURE, errno, "cannot exec %s", argv[1]);
       _exit (EXIT_FAILURE);
