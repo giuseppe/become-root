@@ -505,7 +505,7 @@ main (int argc, char **argv)
         {
           const char *shell = getenv ("SHELL");
           if (execlp (shell, shell, NULL) < 0)
-            error (EXIT_FAILURE, errno, "cannot exec %s", argv[1]);
+            error (EXIT_FAILURE, errno, "cannot exec %s", shell);
         }
       if (execvp (*argv, argv) < 0)
         error (EXIT_FAILURE, errno, "cannot exec %s", argv[1]);
