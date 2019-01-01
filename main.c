@@ -373,7 +373,7 @@ main (int argc, char **argv)
 
             case 'N':
               configure_network = true;
-              /* passthrough */
+              /* fallthrough */
             case 'n':
               flags |= CLONE_NEWNET;
               break;
