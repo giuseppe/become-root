@@ -330,6 +330,7 @@ main (int argc, char **argv)
   bool configure_network = false;
   bool keep_mapping = uid == 0;
   int network_pipe[2];
+  char uid_fmt[16];
 
   argv++;
 
@@ -507,6 +508,12 @@ main (int argc, char **argv)
           if (execlp (shell, shell, NULL) < 0)
             error (EXIT_FAILURE, errno, "cannot exec %s", shell);
         }
+
+      /* Used by podman when setting up a rootless user namespace.  */
+      setenv ("_LIBPOD_USERNS_CONFIGURED", "init", 1);
+      sprintf (uid_fmt, "%d", uid);
+      setenv ("_LIBPOD_ROOTLESS_UID", uid_fmt, 1);
+
       if (execvp (*argv, argv) < 0)
         error (EXIT_FAILURE, errno, "cannot exec %s", argv[1]);
       _exit (EXIT_FAILURE);
