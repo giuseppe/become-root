@@ -55,14 +55,19 @@ getsubidrange (uid_t uid, uid_t id, int is_uid, uint32_t *from, uint32_t *len)
 {
   cleanup_file FILE *input = NULL;
   cleanup_free char *lineptr = NULL;
-  size_t lenlineptr = 0, len_name;
+  size_t lenlineptr = 0, len_name, uid_fmt_len;
   const char *name;
+  char uid_fmt[16];
   struct passwd *pwd = getpwuid (uid);
   if (pwd == NULL)
     return -1;
   name = pwd->pw_name;
 
   len_name = strlen (name);
+
+  sprintf (uid_fmt, "%d:", uid);
+
+  uid_fmt_len = strlen (uid_fmt);
 
   input = fopen (is_uid ? "/etc/subuid" : "/etc/subgid", "r");
   if (input == NULL)
@@ -78,10 +83,10 @@ getsubidrange (uid_t uid, uid_t id, int is_uid, uint32_t *from, uint32_t *len)
       if (read < len_name + 2)
         continue;
 
-      if (memcmp (lineptr, name, len_name) || lineptr[len_name] != ':')
+      if ((memcmp (lineptr, name, len_name) || lineptr[len_name] != ':') && memcmp (lineptr, uid_fmt, uid_fmt_len))
         continue;
 
-      *from = strtoull (&lineptr[len_name + 1], &endptr, 10);
+      *from = strtoull (strchr (lineptr, ':') + 1, &endptr, 10);
 
       if (endptr >= &lineptr[read])
         return -1;
