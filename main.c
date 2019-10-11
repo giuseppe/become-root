@@ -44,7 +44,6 @@ write_mapping (char *program, pid_t pid, uint32_t host_id,
   char arg_buffer[32][16];
   char *argv[32] = { 0 };
   int argc = 0;
-  int exit_status;
 
 #define APPEND_ARGUMENT(x)                        \
   do                                              \
@@ -142,7 +141,7 @@ copy_mappings (const char *from, const char *to)
         {
         case 0:
           len = strtoull (it, NULL, 10);
-          b_it += sprintf (b_it, "%lu %lu %lu\n", so_far, id, len);
+          b_it += sprintf (b_it, "%u %u %u\n", so_far, id, len);
           so_far += len;
           break;
 
@@ -181,7 +180,6 @@ do_setup (struct user_mapping *user_mapping,
 {
   char b;
   ssize_t s;
-  int sync_fd[2];
 
   do
     s = read (p1[0], &b, 1);
@@ -405,9 +403,9 @@ main (int argc, char **argv)
 
   if (! keep_mapping)
     {
-      if (getsubidrange (uid, uid, 1, &user_mapping.first_subuid, &user_mapping.n_subuid) < 0)
+      if (getsubidrange (uid, 1, &user_mapping.first_subuid, &user_mapping.n_subuid) < 0)
         error (EXIT_FAILURE, errno, "cannot read subuid file or find the user");
-      if (getsubidrange (uid, gid, 1, &user_mapping.first_subgid, &user_mapping.n_subgid) < 0)
+      if (getsubidrange (uid, 0, &user_mapping.first_subgid, &user_mapping.n_subgid) < 0)
         error (EXIT_FAILURE, errno, "cannot read subgid file or find the user");
     }
 
