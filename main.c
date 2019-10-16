@@ -494,10 +494,13 @@ main (int argc, char **argv)
 
       set_all_caps ();
 
-      if (mount_proc && mount ("proc", "/proc", "proc", 0, "nosuid,noexec,nodev") < 0)
+      if (mount_proc)
+        {
+          if (mount ("proc", "/proc", "proc", MS_NOSUID|MS_NOEXEC|MS_NODEV, NULL) < 0)
             error (EXIT_FAILURE, errno, "could not mount proc");
+        }
 
-      if (mount_sys && mount ("sysfs", "/sys", "sysfs", 0, "nosuid,noexec,nodev") < 0)
+      if (mount_sys && mount ("sysfs", "/sys", "sysfs", MS_NOSUID|MS_NOEXEC|MS_NODEV, NULL) < 0)
             error (EXIT_FAILURE, errno, "could not mount sys");
 
       if (*argv == NULL)
