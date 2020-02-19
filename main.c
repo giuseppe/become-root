@@ -1,5 +1,5 @@
 /* become-root
- * Copyright (C) 2018 Giuseppe Scrivano
+ * Copyright (C) 2018-2020 Giuseppe Scrivano
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -312,6 +312,7 @@ usage (FILE *o, char **argv)
   fprintf (o, "  -u specify CLONE_NEWUTS\n");
   fprintf (o, "  -P mount a fresh /proc\n");
   fprintf (o, "  -S mount a fresh /sys\n");
+  fprintf (o, "  -C mount cgroup2 under /sys/fs/cgroup\n");
 }
 
 int
@@ -325,6 +326,7 @@ main (int argc, char **argv)
   unsigned int flags = CLONE_NEWUSER;
   bool mount_proc = false;
   bool mount_sys = false;
+  bool mount_cgroup2 = false;
   bool configure_network = false;
   bool keep_mapping = uid == 0;
   int network_pipe[2];
@@ -360,6 +362,10 @@ main (int argc, char **argv)
 #ifdef CLONE_NEWCGROUP
               flags |= CLONE_NEWCGROUP;
 #endif
+              break;
+
+            case 'C':
+              mount_cgroup2 = true;
               break;
 
             case 'i':
@@ -502,6 +508,9 @@ main (int argc, char **argv)
 
       if (mount_sys && mount ("sysfs", "/sys", "sysfs", MS_NOSUID|MS_NOEXEC|MS_NODEV, NULL) < 0)
             error (EXIT_FAILURE, errno, "could not mount sys");
+
+      if (mount_cgroup2 && mount ("cgroup2", "/sys/fs/cgroup", "cgroup2", MS_NOSUID|MS_NOEXEC|MS_NODEV, NULL) < 0)
+            error (EXIT_FAILURE, errno, "could not mount cgroup2");
 
       if (*argv == NULL)
         {
