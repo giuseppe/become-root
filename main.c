@@ -35,6 +35,7 @@
 #include <linux/if.h>
 #include <linux/if_tun.h>
 #include <sys/ioctl.h>
+#include <grp.h>
 
 static int
 write_mapping (char *program, pid_t pid, uint32_t host_id,
@@ -313,6 +314,7 @@ usage (FILE *o, char **argv)
   fprintf (o, "  -P mount a fresh /proc\n");
   fprintf (o, "  -S mount a fresh /sys\n");
   fprintf (o, "  -C mount cgroup2 under /sys/fs/cgroup\n");
+  fprintf (o, "  -k do not drop secondary groups\n");
 }
 
 int
@@ -328,6 +330,7 @@ main (int argc, char **argv)
   bool mount_sys = false;
   bool mount_cgroup2 = false;
   bool configure_network = false;
+  bool keep_groups = false;
   bool keep_mapping = uid == 0;
   int network_pipe[2];
   char uid_fmt[16];
@@ -397,6 +400,10 @@ main (int argc, char **argv)
 
             case 'S':
               mount_sys = true;
+              break;
+
+            case 'k':
+              keep_groups = true;
               break;
 
             default:
@@ -491,6 +498,9 @@ main (int argc, char **argv)
 
       if (setresuid (0, 0, 0) < 0)
         error (EXIT_FAILURE, errno, "cannot setresuid");
+
+      if (!keep_groups && setgroups (0, NULL) < 0)
+        error (EXIT_FAILURE, errno, "setgroups");
 
       if (prctl (PR_SET_KEEPCAPS, 1, 0, 0, 0) < 0)
             error (EXIT_FAILURE, errno, "cannot set keepcaps");
