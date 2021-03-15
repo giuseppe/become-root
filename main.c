@@ -34,6 +34,7 @@
 #include <sys/capability.h>
 #include <linux/if.h>
 #include <linux/if_tun.h>
+#include <sys/wait.h>
 #include <sys/ioctl.h>
 #include <grp.h>
 
@@ -315,6 +316,21 @@ usage (FILE *o, char **argv)
   fprintf (o, "  -S mount a fresh /sys\n");
   fprintf (o, "  -C mount cgroup2 under /sys/fs/cgroup\n");
   fprintf (o, "  -k do not drop secondary groups\n");
+  fprintf (o, "  -r run a reaper as PID 1 (forces -p)\n");
+}
+
+static
+void run_reaper ()
+{
+  pid_t r;
+
+  if (prctl (PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) < 0)
+    error (EXIT_FAILURE, errno, "cannot set subreaper");
+
+  do
+    r = waitpid (-1, NULL, 0);
+  while (r > 0 || errno != ECHILD);
+  _exit (EXIT_SUCCESS);
 }
 
 int
@@ -331,6 +347,7 @@ main (int argc, char **argv)
   bool mount_cgroup2 = false;
   bool configure_network = false;
   bool keep_groups = false;
+  bool reaper = false;
   bool keep_mapping = uid == 0;
   int network_pipe[2];
   char uid_fmt[16];
@@ -386,6 +403,9 @@ main (int argc, char **argv)
               flags |= CLONE_NEWNET;
               break;
 
+            case 'r':
+              reaper = true;
+              /* fallthrough */
             case 'p':
               flags |= CLONE_NEWPID;
               break;
@@ -533,6 +553,15 @@ main (int argc, char **argv)
       setenv ("_LIBPOD_USERNS_CONFIGURED", "init", 1);
       sprintf (uid_fmt, "%d", uid);
       setenv ("_LIBPOD_ROOTLESS_UID", uid_fmt, 1);
+
+      if (reaper)
+        {
+          pid_t p = fork ();
+          if (p < 0)
+            error (EXIT_FAILURE, errno, "fork");
+          if (p)
+            run_reaper ();
+        }
 
       if (execvp (*argv, argv) < 0)
         error (EXIT_FAILURE, errno, "cannot exec %s", argv[1]);
