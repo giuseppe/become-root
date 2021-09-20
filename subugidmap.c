@@ -31,6 +31,10 @@
 #include <pwd.h>
 #include <grp.h>
 
+#ifdef HAVE_LIBSUBID
+# include <shadow/subid.h>
+#endif
+
 static void
 cleanup_freep (void *p)
 {
@@ -46,8 +50,42 @@ cleanup_filep (FILE **f)
     (void) fclose (file);
 }
 
-#define cleanup_free __attribute__((cleanup (cleanup_freep)))
-#define cleanup_file __attribute__((cleanup (cleanup_filep)))
+
+#ifdef HAVE_LIBSUBID
+/*if subuid or subgid exist, take the first range for the user */
+int
+getsubidrange (uid_t uid, int is_uid, uint32_t *from, uint32_t *len)
+{
+  int i, ret;
+  struct passwd *pwd;
+  struct subid_range *ranges = NULL;
+
+  pwd = getpwuid (uid);
+  if (pwd == NULL)
+    return -1;
+
+  if (is_uid)
+    ret = get_subuid_ranges (pwd->pw_name, &ranges);
+  else
+    ret = get_subgid_ranges (pwd->pw_name, &ranges);
+  if (ret < 0)
+    return ret;
+
+  /* Nothing found.  */
+  if (ret == 0)
+    return -1;
+
+  *from = ranges[0].start;
+  *len = ranges[0].count;
+
+  free (ranges);
+  return 0;
+}
+
+#else
+
+# define cleanup_free __attribute__((cleanup (cleanup_freep)))
+# define cleanup_file __attribute__((cleanup (cleanup_filep)))
 
 /*if subuid or subgid exist, take the first range for the user */
 int
@@ -97,3 +135,5 @@ getsubidrange (uid_t uid, int is_uid, uint32_t *from, uint32_t *len)
       return 0;
     }
 }
+
+#endif
