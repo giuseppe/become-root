@@ -304,6 +304,7 @@ static void
 usage (FILE *o, char **argv)
 {
   fprintf (o, "Usage: %s -acimnpuPSN COMMAND [ARGS]\n", argv[0]);
+  fprintf (o, "  -A unshare all the namespaces and do fresh mounts\n");
   fprintf (o, "  -a unshare all the namespaces\n");
   fprintf (o, "  -c specify CLONE_NEWCGROUP\n");
   fprintf (o, "  -i specify CLONE_NEWIPC\n");
@@ -370,6 +371,12 @@ main (int argc, char **argv)
         {
           switch (*c)
             {
+            case 'A':
+              mount_proc = true;
+              mount_sys = true;
+
+              /* fallthrough.  */
+
             case 'a':
 #ifdef CLONE_NEWCGROUP
               flags |= CLONE_NEWNS | CLONE_NEWNET | CLONE_NEWIPC | CLONE_NEWPID | CLONE_NEWCGROUP | CLONE_NEWUTS;
