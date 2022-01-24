@@ -52,6 +52,13 @@ cleanup_filep (FILE **f)
 
 
 #ifdef HAVE_LIBSUBID
+
+#if !defined(SUBID_ABI_MAJOR) || (SUBID_ABI_MAJOR < 4)
+# define subid_get_uid_ranges get_subuid_ranges
+# define subid_get_gid_ranges get_subgid_ranges
+#endif
+
+
 /*if subuid or subgid exist, take the first range for the user */
 int
 getsubidrange (uid_t uid, int is_uid, uint32_t *from, uint32_t *len)
@@ -65,9 +72,9 @@ getsubidrange (uid_t uid, int is_uid, uint32_t *from, uint32_t *len)
     return -1;
 
   if (is_uid)
-    ret = get_subuid_ranges (pwd->pw_name, &ranges);
+    ret = subid_get_uid_ranges (pwd->pw_name, &ranges);
   else
-    ret = get_subgid_ranges (pwd->pw_name, &ranges);
+    ret = subid_get_gid_ranges (pwd->pw_name, &ranges);
   if (ret < 0)
     return ret;
 
