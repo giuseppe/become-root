@@ -330,7 +330,7 @@ void run_reaper ()
 
   do
     r = waitpid (-1, NULL, 0);
-  while (r > 0 || errno != ECHILD);
+  while (r > 0 || (errno != ECHILD && errno != EINTR));
   _exit (EXIT_SUCCESS);
 }
 
